@@ -1,18 +1,26 @@
 package com.ruzak.roottemporary;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 
 public final class MainActivity extends Activity {
+    private LinearLayout root;
+    private TextView result;
+    private String report = "";
+
     private String kernelRelease() {
         try (BufferedReader r = new BufferedReader(new FileReader("/proc/sys/kernel/osrelease"))) {
             String value = r.readLine();
@@ -21,31 +29,89 @@ public final class MainActivity extends Activity {
             return System.getProperty("os.version", "Unavailable");
         }
     }
-    private void add(LinearLayout root, String value, int size, boolean bold) {
+
+    private void add(LinearLayout parent, String value, int size, boolean bold) {
         TextView t = new TextView(this);
-        t.setText(value); t.setTextSize(size); t.setTextColor(0xFFECEFF4);
-        t.setPadding(0, 9, 0, 9);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(0xFFECEFF4);
+        t.setPadding(0, 8, 0, 8);
         if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(t, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        parent.addView(t, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
+
+    private boolean anyFile(String... paths) {
+        for (String path : paths) if (new File(path).exists()) return true;
+        return false;
+    }
+
+    private String buildReport() {
+        StringBuilder s = new StringBuilder();
+        s.append("Root Temporary — Safe Compatibility Check\n\n");
+        s.append("Manufacturer: ").append(Build.MANUFACTURER).append('\n');
+        s.append("Brand: ").append(Build.BRAND).append('\n');
+        s.append("Model: ").append(Build.MODEL).append('\n');
+        s.append("Device: ").append(Build.DEVICE).append('\n');
+        s.append("Fingerprint: ").append(Build.FINGERPRINT).append('\n');
+        s.append("Android: ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n");
+        s.append("Security patch: ").append(Build.VERSION.SECURITY_PATCH).append('\n');
+        s.append("Kernel: ").append(kernelRelease()).append('\n');
+        s.append("Build ID: ").append(Build.DISPLAY).append("\n\n");
+        s.append("SAFE CHECKS (not an exploit test)\n");
+        s.append("Debuggable build flag: ").append(Build.isDebuggable() ? "YES" : "NO").append('\n');
+        s.append("Test-keys build tag: ").append(Build.TAGS != null && Build.TAGS.contains("test-keys") ? "YES" : "NO").append('\n');
+        s.append("Common su binary path found: ").append(anyFile("/system/bin/su", "/system/xbin/su", "/sbin/su", "/vendor/bin/su") ? "YES (presence only)" : "NO").append('\n');
+        s.append("Exploit compatibility: NOT DETERMINED\n");
+        s.append("These checks do not verify kernel vulnerability, do not attempt privilege escalation, and cannot grant root. A missing su file does not prove the device is unrooted.\n");
+        return s.toString();
+    }
+
+    private void runChecks() {
+        report = buildReport();
+        result.setText(report);
+    }
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        ScrollView scroll = new ScrollView(this); scroll.setBackgroundColor(0xFF17191F);
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24, 32, 24, 32); scroll.addView(root); setContentView(scroll);
-        add(root, "Root Temporary — Diagnostics", 24, true);
-        add(root, "Read-only report. This app does not run an exploit, modify the kernel, or grant root.", 15, false);
-        add(root, "DEVICE", 18, true);
-        add(root, "Manufacturer: " + Build.MANUFACTURER, 15, false);
-        add(root, "Brand: " + Build.BRAND, 15, false);
-        add(root, "Model: " + Build.MODEL, 15, false);
-        add(root, "Device: " + Build.DEVICE, 15, false);
-        add(root, "Build fingerprint: " + Build.FINGERPRINT, 12, false);
-        add(root, "Android: " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")", 15, false);
-        add(root, "Security patch: " + Build.VERSION.SECURITY_PATCH, 15, false);
-        add(root, "Kernel release: " + kernelRelease(), 12, false);
-        add(root, "Build ID: " + Build.DISPLAY, 12, false);
-        add(root, "COMPATIBILITY STATUS", 18, true);
-        add(root, "Not determined. Device properties alone cannot prove a kernel exploit is vulnerable. Compare this report with a trusted device-specific compatibility record and the upstream verification logic.", 15, false);
-        add(root, "A successful APK build is not proof of root compatibility. Attach this report and the complete DFRoot log for further audit.", 15, false);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(0xFF17191F);
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(24, 32, 24, 32);
+        scroll.addView(root);
+        setContentView(scroll);
+
+        add(root, "Root Temporary — Safe Check", 24, true);
+        add(root, "Read-only compatibility checks for DFRoot. No exploit is executed and no system files are modified.", 15, false);
+        Button check = new Button(this);
+        check.setText("Jalankan Pemeriksaan");
+        root.addView(check, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        check.setOnClickListener(v -> runChecks());
+
+        Button share = new Button(this);
+        share.setText("Bagikan / Simpan Laporan");
+        root.addView(share, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        share.setOnClickListener(v -> {
+            if (report.isEmpty()) runChecks();
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_SUBJECT, "Root Temporary compatibility report");
+            intent.putExtra(Intent.EXTRA_TEXT, report);
+            startActivity(Intent.createChooser(intent, "Bagikan laporan"));
+        });
+
+        add(root, "HASIL PEMERIKSAAN", 18, true);
+        result = new TextView(this);
+        result.setTextColor(0xFFECEFF4);
+        result.setTextSize(14);
+        result.setTextIsSelectable(true);
+        root.addView(result, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        add(root, "PENTING", 18, true);
+        add(root, "Status kompatibilitas exploit tetap NOT DETERMINED sampai ada bukti teknis yang tepercaya untuk kombinasi kernel dan firmware ini. Build APK yang sukses bukan bukti perangkat rentan.", 15, false);
+        runChecks();
     }
 }
